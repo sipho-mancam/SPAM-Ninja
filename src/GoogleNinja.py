@@ -16,14 +16,13 @@ from bs4 import BeautifulSoup
 
 SCOPES = ["https://mail.google.com/"]
 
-
 class GMailAPI:
 
     def __init__(self, scopes, fp, **kwargs)->None:
         self.SCOPES = scopes
         self.creds = None
         self.creds_file_path = fp;
-        self.threads = None;
+        self.threads = []
         self.new_message= None;
         self.classifier = None;
         self.service_obj = None;
@@ -62,33 +61,21 @@ class GMailAPI:
                 # create gmail api client
                 service = build('gmail', 'v1', credentials=self.creds)
                 self.service_obj = service
-                # pylint: disable=maybe-no-member
-                # pylint: disable:R1710
-                threads = service.users().threads().list(userId='me').execute().get('threads', [])
-                thread = service.users().threads().get(userId='me', id=threads[0]['id']).execute()
-                # pprint.pprint(thread['messages'][0]['payload']['parts'][1]['body']['data'])
-                self.threads = threads
-                msg_list = service.users().messages().list(userId='me').execute()
-                msg = service.users().messages().get(userId='me', id=msg_list['messages'][0]['id']).execute()
-                pprint.pprint(msg['payload'])
-
-                self.flag_spam(msg_list['messages'][0])
-                # self.get_message(msg)
+                threads = service.users().threads().list(userId='me', labelIds=['INBOX']).execute().get('threads', [])
+                for t in threads:
+                    thr = self.service_obj.users().threads().get(userId='me', id=t['id']).execute()
+                    self.threads.append(thr)
             except HttpError as error:
                 print(F'An error occurred: {error}')
         else:
             raise HttpError('An error occurred: {error}')
         
-    def flag_spam(self, message):
-        try:
-            labels = {
+        
+    def flag_spam(self, thread, labels={
                 'addLabelIds':['SPAM'],
                 'removeLabelIds':['INBOx'],
-            }
-            self.service_obj.users().messages().modify(userId='me', id=message['id'], body=labels).execute()
-            return True
-        except HttpError as e:
-            return False
+            }):
+        return self.modify_labels(labels.get('addLabelIds'), labels.get('removeLabelIds'), thread.get('id'))
 
     def modify_labels(self, add_labels=[], remove_label=[], thread={'id':''}):
         try:
@@ -98,15 +85,62 @@ class GMailAPI:
             }
             self.service_obj.users().threads().modify(userId='me', id=thread['id'], body=labels).execute()
         except HttpError as he:
-            print(he)
-            return False
+            print(self.create_label())
+            for l in add_labels:
+                print(self.create_label(label_name=l))
+
+            return self.modify_labels(add_labels, remove_label, thread)
         
-    def create_label(label_name):
-        pass
+    def create_label(self, label_name:str='MARKED'):
+        label={
+            'id':label_name.upper(),
+            'name':label_name,
+            'messageListVisibility':'show',
+            'labelListVisibility': 'labelShow',
+            'type':'user',
+            'color':{
+                "textColor": "#ffffff",
+                "backgroundColor": "#434343"
+            }
+        }
+        try:
+            self.service_obj.users().labels().create(userId='me', body=label).execute()
+        except HttpError as he:
+            # print(he.arg)
+            return False
 
     #############################################################
     # Helper Methods to decode and parse message to normal text.#
     #############################################################
+
+    def  aggregate_thread_messages(self, thread)->str:
+        messages = thread['messages'] # a litst of message objects.
+        res_data = '' 
+        for message in messages:
+            try:
+                res_data += self.get_message(message)
+                res_data = self.clean_string(res_data)
+
+            except ValueError as ve:
+                print(ve)
+        
+        thread_data = {
+            'id':thread['id'],
+            'text': res_data
+        }
+        return thread_data
+
+    def clean_string(self, s:str)->str:
+        s = s.replace('\n', '')
+        s = s.replace('\r\n', '')
+        s = s.replace('\r', '')
+        s = s.replace('\t', '')
+        s = s.replace('\r', '')
+        s = s.replace('(  )', '')
+        s = re.sub(r'http\S+', '', s)
+        return s
+
+
 
     def get_message(self, msg_obj)->str:
         payload = msg_obj['payload']
@@ -115,44 +149,53 @@ class GMailAPI:
         if re.match(r'multipart',payload['mimeType'].lower()) is not None:
             # is multipart, let's combine the parts.
             for data in payload['parts']:
-                text = self.decode_message(data['body']['data'])
-                print(text)
-                if type(text) is not bool:
-                    print(self.is_html(text))
-
-
-    def process_message(self, message_obj)->str:
-        message_data = message_obj
+                # pprint.pprint(data)
+                text = self.decode_message(data['body'].get('data'))
+                # check if it's html based text
+                if not isinstance(text, Exception):
+                    if self.is_html(text):
+                        actual_msg = self.extract_data_4rm_html(text)
+                        res += actual_msg
+                    else:
+                        res += text
+                    return res
+                else:
+                    raise ValueError("Message Could Not be docoded: {e}" );
+        else:
+            text = self.decode_message(payload['body'].get('data'))
+            
+            if not isinstance(text, Exception):
+                    if self.is_html(text):
+                        actual_msg = self.extract_data_4rm_html(text)
+                        res += actual_msg
+                    else:
+                        res += text
+                    return res
+            else:
+                raise ValueError("Message Could Not be docoded: {e}" );
 
     def decode_message(self, message:str)->str:     
         try:
-            if message.endswith(r'='):
-                dec = base64.b64decode(message)
-            else:
-                message += '==';
-                dec = base64.b64decode(message)
-                # dec.decode('utf-32')
-            return str(dec)
+            dec = base64.urlsafe_b64decode(message)
+            dec = dec.decode('utf-8')
+            return dec
         except Exception as e:
-            print(e)
-            return False
+            print(F'There was an error: {e}')
+            return e
     
     def is_html(self, message:str)->bool:
+        message = message.strip()
         res = re.match(r'<.*?>', message)
         if res is not None:
-            return True
+            return True    
         else:
+            if re.match(r'<![A-Za-z0-9].*?', message) is not None:
+                return True 
             return False
     
     def extract_data_4rm_html(self, message:str)->str:
-        soup = BeautifulSoup(message)
-
+        soup = BeautifulSoup(message, 'lxml')
         text = soup.text
-
-        text.replace('\n', '')
-
-        print(text)
-
         return text
 
     def run(self):
@@ -163,20 +206,22 @@ class GMailAPI:
         3. Flag the Thread either as SPAM or None SPAM,
         4. Repeat for all the thraeds.
         """
-        self.read_threads()
+        self.read_threads() # This will read new threads and store them.
         for thread in self.threads:
-            self.clean_thread(thread)
-            res = self.classifer.is_spam(thread)
+            t = self.aggregate_thread_messages(thread) # this method will go through the thread and combine all the messages into a single string
+            # res = self.classifer.is_spam(thread)
+            print(t['text'], end='')
+            res = False
             if res:
-                self.flag_spam(thread)
+                self.flag_spam(t)
             # mark the thread as marked.
+            # print(self.modify_labels(['CHECKED'], [], t)) # mark this thread as checked, so that we filter out all threads we've checked
             
 
 
 
 
 gApi = GMailAPI(SCOPES, 'spam-ninja-creds.json')
-
 
 
 if __name__ == '__main__':
