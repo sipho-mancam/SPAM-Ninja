@@ -12,6 +12,7 @@ import pprint
 import base64
 import re
 from bs4 import BeautifulSoup
+import time
 
 
 SCOPES = ["https://mail.google.com/"]
@@ -222,5 +223,7 @@ gApi = GMailAPI(SCOPES, 'spam-ninja-creds.json')
 
 
 if __name__ == '__main__':
-    gApi.run()
+    while True:
+        gApi.run()
+        time.sleep(100)
     
