@@ -17,7 +17,6 @@ from bs4 import BeautifulSoup
 SCOPES = ["https://mail.google.com/"]
 
 class GMailAPI:
-
     def __init__(self, scopes, fp, **kwargs)->None:
         self.SCOPES = scopes
         self.creds = None
@@ -217,8 +216,6 @@ class GMailAPI:
             # mark the thread as marked.
             # print(self.modify_labels(['CHECKED'], [], t)) # mark this thread as checked, so that we filter out all threads we've checked
             
-
-
 
 
 gApi = GMailAPI(SCOPES, 'spam-ninja-creds.json')
