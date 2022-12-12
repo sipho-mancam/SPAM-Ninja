@@ -48,6 +48,7 @@ This project aims to:
 
 # Remarks
 
+**Note:**
 > **This project is still under-development**
 
 > **I'm still in the process of implementing what makes this project useful (The AI)**
