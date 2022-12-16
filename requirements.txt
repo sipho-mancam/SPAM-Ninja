@@ -48,4 +48,6 @@ tifffile==2022.10.10
 uritemplate==4.1.1
 urllib3==1.26.13
 validator==0.7.1
+tomli==2.0.1
 validators==0.20.0
+wordcloud==1.8.2.2

@@ -8,11 +8,16 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from pathlib import Path
 import pprint
 import base64
 import re
 from bs4 import BeautifulSoup
 import time
+
+from ml_model.spam_classifier import NBClassifier, nb_classifier
+
+BASE_DIR = Path(__file__+'../../').resolve().as_posix()
 
 
 SCOPES = ["https://mail.google.com/"]
@@ -38,17 +43,17 @@ class GMailAPI:
         # The file token.json stores the user's access and refresh tokens, and is
         # created automatically when the authorization flow completes for the first
         # time.
-        if os.path.exists('token.json'):
-            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        if os.path.exists(BASE_DIR+'/token.json'):
+            creds = Credentials.from_authorized_user_file(BASE_DIR+'/token.json', SCOPES)
         # If there are no (valid) credentials available, let the user log in.
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file('spam-ninja-creds.json', SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(BASE_DIR+'/spam-ninja-creds.json', SCOPES)
                 creds = flow.run_local_server(port=0)
             # Save the credentials for the next run
-            with open('token.json', 'w') as token:
+            with open(BASE_DIR+'token.json', 'w') as token:
                 token.write(creds.to_json())
         self.creds = creds
 
@@ -199,28 +204,26 @@ class GMailAPI:
         return text
 
     def run(self):
-        # self.read_threads()
         """
         1. Read the threads, and get all the messages inside threads and the clean them up
         2. Run the messages in a thread collectively through the classifier(to build ...)TODO,
         3. Flag the Thread either as SPAM or None SPAM,
         4. Repeat for all the thraeds.
         """
-        self.read_threads() # This will read new threads and store them.
+        # This will read new threads and store them.
+        self.read_threads() 
         for thread in self.threads:
             t = self.aggregate_thread_messages(thread) # this method will go through the thread and combine all the messages into a single string
-            # res = self.classifer.is_spam(thread)
-            print(t['text'], end='')
+            res = self.classifier.classify(t)      
             res = False
             if res:
                 self.flag_spam(t)
             # mark the thread as marked.
-            # print(self.modify_labels(['CHECKED'], [], t)) # mark this thread as checked, so that we filter out all threads we've checked
-            
 
 
 gApi = GMailAPI(SCOPES, 'spam-ninja-creds.json')
 
+gApi.set_classifier(nb_classifier)
 
 if __name__ == '__main__':
     while True:
