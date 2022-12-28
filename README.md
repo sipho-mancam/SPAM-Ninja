@@ -1,6 +1,6 @@
 # SPAM Ninja
 
-This project is a mailing client, that you can give access to your gmail and it will monitor your mail space for spam, using classification models from scikit-learn to identify spam and filter it out. 
+This project is a mailing client, that you can give access to your gmail and it will monitor your mail space for spam, using Naive Bayes classifier to identify spam and filter it out. 
 
 # Objectives
 
@@ -14,8 +14,6 @@ This project aims to:
 
 * Python
 * GMAIL API 
-* Scikit-learn
-* Scikit-learn Helpers
 
 # Build
 
